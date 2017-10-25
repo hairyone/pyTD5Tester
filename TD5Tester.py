@@ -1,5 +1,4 @@
 from pyftdi.ftdi import Ftdi
-import pyftdi.serialext
 import time
 
 READ_BUFFER_SIZE    = 127
