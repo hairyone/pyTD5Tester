@@ -4,7 +4,7 @@ A simple python script that can be run Python 3.6 under Windows to communicate w
 
 To use this you will need a VAG COM KKL usb -> OBD2 cable that uses an FTDI chip.
 
-Other softwaere you will need:
+Other software you will need:
 
 * Python 3.6 for Windows, https://www.python.org/downloads/windows
 * PyFtdi python library, https://github.com/eblot/pyftdi
