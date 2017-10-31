@@ -7,10 +7,13 @@ READ_BUFFER_SIZE        = 127
 
 MAX_ATTEMPTS            = 5
 ATTEMPT_DELAY           = 3     # 2s
-SEND_REQUEST_DELAY      = 0.2 # 0.055 # 55ms
+SEND_REQUEST_DELAY      = 0.2   # 0.055 # 55ms
 READ_RESPONSE_TIMEOUT   = 0.1   # 100ms
 
 Pid = namedtuple('Pid', ['request', 'response_len'])
+
+# http://www.rangerovers.net/forum/12-diagnostic-equipment/39941-working-homemade-error-reader-scanner-need-help-ecu-output.html
+ABS_INIT_FRAME      = Pid(bytearray([0x81, 0x29, 0xF7, 0x81, 0x0C]),        7)
 
 INIT_FRAME          = Pid(bytearray([0x81, 0x13, 0xF7, 0x81, 0x0C]),        7)
 START_DIAGNOSTICS   = Pid(bytearray([0x02, 0x10, 0xA0, 0xB2]),              3)
@@ -19,6 +22,9 @@ KEY_RETURN          = Pid(bytearray([0x04, 0x27, 0x02, 0x00, 0x00, 0x00]),  4)
 BATTERY_VOLTAGE     = Pid(bytearray([0x02, 0x21, 0x10, 0x00]),              8)
 ENGINE_RPM          = Pid(bytearray([0x02, 0x21, 0x09, 0x00]),              6)
 VEHICLE_SPEED       = Pid(bytearray([0x02, 0x21, 0x0D, 0x00]),              5)
+
+HI = bytearray([0x01])
+LO = bytearray([0x00])
 
 response    = None 
 connected   = False   
@@ -81,7 +87,9 @@ def get_pid(pid):
     if not connected:
         log_data(pid.request, True)
 
-    pause(SEND_REQUEST_DELAY, 0.001)
+    if pid != INIT_FRAME:
+        pause(SEND_REQUEST_DELAY, 0.001)
+
     uart.write_data(pid.request)
 
     # read the response
@@ -127,26 +135,104 @@ def calculate_key(seed):
     return (seed >> 8, seed & 255)
 
 ################################################################################
-def fast_init():
+def open_uart():
 ################################################################################
     global uart
-    global KEY_RETURN
-    global response
-    global connected
-    
-    HI = bytearray([0x01])
-    LO = bytearray([0x00])
 
     # set up the device
     uart = Ftdi()
     try:
         uart.open(0x403, 0x6001)
     except Exception as e:
+        uart = None
         print("error={}".format(e))
         return
     
     uart.set_baudrate(10400)
     uart.set_line_property(8, 1, 'N')
+    # print(uart.modem_status())
+
+################################################################################
+def slow_init(address):
+################################################################################
+
+    # Set K-line HI for 300ms
+    # Transmit address byte at 5 baud (0x33)
+    # Switch to 10400 baud
+    # Wait 60-300ms for synchronisation pattern byte 0x55
+    # Wait 5-20ms for KB1 (one of 0xE9 0x6B 0x6D 0xEF)
+    # Wait 0-20ms for KB2 (always 0x8F)
+    # Wait 25-50ms and send inverted KB2
+    # Wait 25-50ms and send inverted address byte
+
+    global uart
+    global response
+    global connected
+
+    if uart is None:
+        return
+
+    uart.set_bitmode(0x01, 0x01)
+        
+    # K line HI for 300ms
+    uart.write_data(HI)
+    pause(0.300, 0.001)
+
+    # Start bit LO
+    uart.write_data(LO)
+    pause(0.200, 0.001)
+
+    # Send the target address LSB first at 5 Baud
+    for i in range(0, 8):
+        hilo = address >> i & 0x01
+        uart.write_data(hilo)
+        pause(0.200, 0.001)
+
+    # Stop bit HI
+    uart.write_data(HI)
+    pause(0.200, 0.01)
+
+    # Switch off bit bang
+    uart.set_bitmode(0x00, 0x00)
+    uart.purge_buffers()
+
+    # Wait up 300ms + 20ms + 20ms to read Sync + KB1 + KB2 bytes
+    response = uart.read_data(3, 0.340)
+
+    response_len = len(response)
+    log_data(response, False)
+    if response[0] == 0x55 and response[2] == 0x8F:
+        inverted_address    = bytearray([~address])
+        inverted_kb2        = bytearray([~response[2]])
+
+        # Send inverted KB2
+        pause(0.025, 0.001)
+        uart.write_data(inverted_kb2)
+        log_data(inverted_kb2)
+
+        # Send inverted address
+        pause (0.025, 0.001)
+        uart.write_data(inverted_address)
+        log_data(inverted_address)
+        
+        connected = True
+    else:
+        uart.close()
+        uart = None
+
+################################################################################
+def fast_init():
+################################################################################
+    global uart
+    global KEY_RETURN
+    global response
+    global connected
+
+    if uart is None:
+        return
+    
+    HI = bytearray([0x01])
+    LO = bytearray([0x00])
 
     attempt = 0
     while attempt < MAX_ATTEMPTS:
@@ -224,6 +310,7 @@ if __name__ == "__main__":
     # TODO: See how fast we can reliably poll the ECU
     # TODO: Can you connect after the engine has started ?
     
+    open_uart()
     fast_init()      
     start_logger()
 
