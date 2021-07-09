@@ -30,34 +30,30 @@ response    = None
 connected   = False   
 uart        = None
 
-################################################################################
+
 def pause(delay, step_size):
-################################################################################
     end_time = time.monotonic() + delay
-    while (time.monotonic() <= end_time):
+    while time.monotonic() <= end_time:
         time.sleep(step_size)
 
-################################################################################
+
 def calculate_checksum(request):
-################################################################################
     request_len = len(request)
     crc = 0
     for i in range(0, request_len - 1):
         crc = crc + request[i]
 
-    return crc % 256 # crc & 0xF
+    return crc % 256  # crc & 0xF
 
-################################################################################
+
 def log_data(data, is_tx):
-################################################################################
     print("{} {}".format(
         ">>" if is_tx else "<<",
         ''.join('{:02X} '.format(x) for x in data).rstrip()
     ))
 
-################################################################################
+
 def read_data(size, timeout):
-################################################################################    
     data = bytearray()
     start = time.monotonic()
     while True:
@@ -74,9 +70,8 @@ def read_data(size, timeout):
 
     return data
 
-################################################################################
+
 def get_pid(pid):
-################################################################################
     global response
     
     result = False
@@ -118,25 +113,23 @@ def get_pid(pid):
 
     return result
 
-################################################################################
+
 def calculate_key(seed):
-################################################################################
     count = ((seed >> 0xC & 0x8) + (seed >> 0x5 & 0x4) + (seed >> 0x3 & 0x2) + (seed & 0x1)) + 1
 
     for idx in range(0, count):
-        tap = ((seed >> 1) + (seed >> 2 ) + (seed >> 8 ) + (seed >> 9)) & 1
-        tmp = (seed >> 1) | ( tap << 0xF)
+        tap = ((seed >> 1) + (seed >> 2) + (seed >> 8) + (seed >> 9)) & 1
+        tmp = (seed >> 1) | (tap << 0xF)
         
         if (seed >> 0x3 & 1) and (seed >> 0xD & 1):
             seed = tmp & ~1
         else:
             seed = tmp | 1
 
-    return (seed >> 8, seed & 255)
+    return seed >> 8, seed & 255
 
-################################################################################
+
 def open_uart():
-################################################################################
     global uart
 
     # set up the device
@@ -152,9 +145,8 @@ def open_uart():
     uart.set_line_property(8, 1, 'N')
     # print(uart.modem_status())
 
-################################################################################
+
 def slow_init(address):
-################################################################################
 
     # Set K-line HI for 300ms
     # Transmit address byte at 5 baud (0x33)
@@ -199,7 +191,6 @@ def slow_init(address):
     # Wait up 300ms + 20ms + 20ms to read Sync + KB1 + KB2 bytes
     response = uart.read_data(3, 0.340)
 
-    response_len = len(response)
     log_data(response, False)
     if response[0] == 0x55 and response[2] == 0x8F:
         inverted_address    = bytearray([~address])
@@ -211,7 +202,7 @@ def slow_init(address):
         log_data(inverted_kb2)
 
         # Send inverted address
-        pause (0.025, 0.001)
+        pause(0.025, 0.001)
         uart.write_data(inverted_address)
         log_data(inverted_address)
         
@@ -220,9 +211,8 @@ def slow_init(address):
         uart.close()
         uart = None
 
-################################################################################
+
 def fast_init():
-################################################################################
     global uart
     global KEY_RETURN
     global response
@@ -263,7 +253,7 @@ def fast_init():
         # >> 04 27 02 14 89 CA
         # << 04 27 02 14 89 CA 02 67 02 6B
 
-        if (get_pid(INIT_FRAME) and get_pid(START_DIAGNOSTICS) and get_pid(REQUEST_SEED)):
+        if get_pid(INIT_FRAME) and get_pid(START_DIAGNOSTICS) and get_pid(REQUEST_SEED):
             seed = response[3] << 8 | response[4]
             key_hi, key_lo = calculate_key(seed)
             KEY_RETURN.request[3] = key_hi
@@ -280,9 +270,8 @@ def fast_init():
         uart.close()
         uart = None
 
-################################################################################
+
 def start_logger():
-################################################################################
     if not connected:
         return
 
@@ -301,9 +290,8 @@ def start_logger():
         
         print(buf)
         
-################################################################################
+
 if __name__ == "__main__":
-################################################################################
 
     # TODO: Continuously wait to connect and handle ignition off and on
     # TODO: Start a new data file each time the ignition is switched on
