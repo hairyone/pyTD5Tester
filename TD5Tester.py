@@ -27,11 +27,13 @@ HI = bytearray([0x01])
 LO = bytearray([0x00])
 
 response    = None 
-connected   = False   
-uart        = None
+connected   = False
 
 bit_mode_bitbang = Ftdi.BitMode(0x01)
 bit_mode_reset = Ftdi.BitMode(0x00)
+
+# set up the device
+uart = Ftdi()
 
 
 def pause(delay, step_size):
@@ -133,14 +135,9 @@ def calculate_key(seed):
 
 
 def open_uart():
-    global uart
-
-    # set up the device
-    uart = Ftdi()
     try:
         uart.open(0x403, 0x6001)
     except Exception as e:
-        uart = None
         print("error={}".format(e))
         return
     
@@ -160,7 +157,6 @@ def slow_init(address):
     # Wait 25-50ms and send inverted KB2
     # Wait 25-50ms and send inverted address byte
 
-    global uart
     global response
     global connected
 
@@ -212,17 +208,12 @@ def slow_init(address):
         connected = True
     else:
         uart.close()
-        uart = None
 
 
 def fast_init():
-    global uart
     global KEY_RETURN
     global response
     global connected
-
-    if uart is None:
-        return
     
     HI = bytearray([0x01])
     LO = bytearray([0x00])
@@ -271,7 +262,6 @@ def fast_init():
     # fast_init failed
     if not connected:
         uart.close()
-        uart = None
 
 
 def start_logger():
