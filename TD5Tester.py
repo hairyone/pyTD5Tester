@@ -283,13 +283,13 @@ def start_logger():
         buf = "{:010.3f}".format(time.monotonic() - start)
         
         if get_pid(BATTERY_VOLTAGE):
-            buf += " " "{:06.2f}".format((response[5] << 8 | response[6]) / 1000.0)
+            buf += " " "Voltage: {:06.2f}".format((response[5] << 8 | response[6]) / 1000.0)
 
         if get_pid(ENGINE_RPM):
-            buf += " " "{:06d}".format(response[3] << 8 | response[4])
+            buf += " " "Engine RPM: {:06d}".format(response[3] << 8 | response[4])
 
         if get_pid(VEHICLE_SPEED):
-            buf += " " "{:03d}".format(response[3])
+            buf += " " "Vehicule speed: {:03d}".format(response[3])
         
         print(buf)
         
@@ -302,6 +302,7 @@ if __name__ == "__main__":
     # TODO: Can you connect after the engine has started ?
     
     open_uart()
-    fast_init()      
+    fast_init()
+    print('Fast init done !')
     start_logger()
 
