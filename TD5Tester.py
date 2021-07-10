@@ -30,6 +30,9 @@ response    = None
 connected   = False   
 uart        = None
 
+bit_mode_bitbang = Ftdi.BitMode(0x01)
+bit_mode_reset = Ftdi.BitMode(0x00)
+
 
 def pause(delay, step_size):
     end_time = time.monotonic() + delay
@@ -164,7 +167,7 @@ def slow_init(address):
     if uart is None:
         return
 
-    uart.set_bitmode(0x01, 0x01)
+    uart.set_bitmode(0x01, bit_mode_bitbang)
         
     # K line HI for 300ms
     uart.write_data(HI)
@@ -185,7 +188,7 @@ def slow_init(address):
     pause(0.200, 0.01)
 
     # Switch off bit bang
-    uart.set_bitmode(0x00, 0x00)
+    uart.set_bitmode(0x00, bit_mode_reset)
     uart.purge_buffers()
 
     # Wait up 300ms + 20ms + 20ms to read Sync + KB1 + KB2 bytes
@@ -227,7 +230,7 @@ def fast_init():
     attempt = 0
     while attempt < MAX_ATTEMPTS:
         # Toggle the TX line for the fast_init using the ftdi chip bit bang mode
-        uart.set_bitmode(0x01, 0x01)
+        uart.set_bitmode(0x01, bit_mode_bitbang)
         
         uart.write_data(HI)
         pause(0.500, 0.01)
@@ -239,7 +242,7 @@ def fast_init():
         pause(0.0245, 0.00025)
 
         # Switch off bit bang
-        uart.set_bitmode(0x00, 0x00)
+        uart.set_bitmode(0x00, bit_mode_reset)
         uart.purge_buffers()
 
         # Start communications
