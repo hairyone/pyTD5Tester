@@ -51,7 +51,7 @@ def calculate_checksum(request):
     return crc % 256  # crc & 0xF
 
 
-def log_data(data, is_tx):
+def log_data(data, is_tx=False):
     print("{} {}".format(
         ">>" if is_tx else "<<",
         ''.join('{:02X} '.format(x) for x in data).rstrip()
@@ -101,7 +101,7 @@ def get_pid(pid):
         response = read_data(pid.response_len + request_len, 0.1)
 
     if not connected:
-        log_data(response, False)
+        log_data(response)
 
     # Remove the request from the response
     response = response[request_len:]
@@ -190,7 +190,7 @@ def slow_init(address):
     # Wait up 300ms + 20ms + 20ms to read Sync + KB1 + KB2 bytes
     response = uart.read_data(3, 0.340)
 
-    log_data(response, False)
+    log_data(response)
     if response[0] == 0x55 and response[2] == 0x8F:
         inverted_address    = bytearray([~address])
         inverted_kb2        = bytearray([~response[2]])
