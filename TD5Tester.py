@@ -26,7 +26,6 @@ VEHICLE_SPEED       = Pid(bytearray([0x02, 0x21, 0x0D, 0x00]),              5)
 HI = bytearray([0x01])
 LO = bytearray([0x00])
 
-response    = None 
 connected   = False
 
 bit_mode_bitbang = Ftdi.BitMode(0x01)
@@ -77,10 +76,6 @@ def read_data(size, timeout):
 
 
 def get_pid(pid):
-    global response
-    
-    result = False
-
     # Punch the calculated checksum into the last byte and then send the request
     request_len = len(pid.request)
     pid.request[request_len - 1] = calculate_checksum(pid.request)
@@ -93,7 +88,6 @@ def get_pid(pid):
     uart.write_data(pid.request)
 
     # read the response
-    response = None        
     if CAUTIOUS_READ:
         response = read_data(READ_BUFFER_SIZE, 0.1)
     else:
@@ -114,9 +108,7 @@ def get_pid(pid):
         if cs1 == cs2:
             # Negative response ?
             if response[1] != 0x7F:
-                result = True
-
-    return result
+                return response
 
 
 def calculate_key(seed):
@@ -157,7 +149,6 @@ def slow_init(address):
     # Wait 25-50ms and send inverted KB2
     # Wait 25-50ms and send inverted address byte
 
-    global response
     global connected
 
     if uart is None:
@@ -212,7 +203,6 @@ def slow_init(address):
 
 def fast_init():
     global KEY_RETURN
-    global response
     global connected
     
     HI = bytearray([0x01])
@@ -247,8 +237,12 @@ def fast_init():
         # >> 04 27 02 14 89 CA
         # << 04 27 02 14 89 CA 02 67 02 6B
 
-        if get_pid(INIT_FRAME) and get_pid(START_DIAGNOSTICS) and get_pid(REQUEST_SEED):
-            seed = response[3] << 8 | response[4]
+        frame_initialized = get_pid(INIT_FRAME)
+        diag_started = get_pid(START_DIAGNOSTICS)
+        response_seed = get_pid(REQUEST_SEED)
+
+        if all([frame_initialized, diag_started, response_seed]):
+            seed = response_seed[3] << 8 | response_seed[4]
             key_hi, key_lo = calculate_key(seed)
             KEY_RETURN.request[3] = key_hi
             KEY_RETURN.request[4] = key_lo
@@ -272,14 +266,17 @@ def start_logger():
     while True:
         buf = "{:010.3f}".format(time.monotonic() - start)
         
-        if get_pid(BATTERY_VOLTAGE):
-            buf += " " "Voltage: {:06.2f}".format((response[5] << 8 | response[6]) / 1000.0)
+        battery_voltage = get_pid(BATTERY_VOLTAGE)
+        if battery_voltage:
+            buf += " " "Voltage: {:06.2f}".format((battery_voltage[5] << 8 | battery_voltage[6]) / 1000.0)
 
-        if get_pid(ENGINE_RPM):
-            buf += " " "Engine RPM: {:06d}".format(response[3] << 8 | response[4])
+        engine_rpm = get_pid(ENGINE_RPM)
+        if engine_rpm:
+            buf += " " "Engine RPM: {:06d}".format(engine_rpm[3] << 8 | engine_rpm[4])
 
-        if get_pid(VEHICLE_SPEED):
-            buf += " " "Vehicule speed: {:03d}".format(response[3])
+        vehicule_speed = get_pid(VEHICLE_SPEED)
+        if vehicule_speed:
+            buf += " " "Vehicule speed: {:03d}".format(vehicule_speed[3])
         
         print(buf)
         
