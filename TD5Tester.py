@@ -202,7 +202,6 @@ def slow_init(address):
 
 
 def fast_init():
-    global KEY_RETURN
     global connected
     
     HI = bytearray([0x01])
