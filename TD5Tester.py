@@ -26,38 +26,38 @@ VEHICLE_SPEED       = Pid(bytearray([0x02, 0x21, 0x0D, 0x00]),              5)
 HI = bytearray([0x01])
 LO = bytearray([0x00])
 
-response    = None 
-connected   = False   
-uart        = None
+connected   = False
 
-################################################################################
+bit_mode_bitbang = Ftdi.BitMode(0x01)
+bit_mode_reset = Ftdi.BitMode(0x00)
+
+# set up the device
+uart = Ftdi()
+
+
 def pause(delay, step_size):
-################################################################################
     end_time = time.monotonic() + delay
-    while (time.monotonic() <= end_time):
+    while time.monotonic() <= end_time:
         time.sleep(step_size)
 
-################################################################################
+
 def calculate_checksum(request):
-################################################################################
     request_len = len(request)
     crc = 0
     for i in range(0, request_len - 1):
         crc = crc + request[i]
 
-    return crc % 256 # crc & 0xF
+    return crc % 256  # crc & 0xF
 
-################################################################################
-def log_data(data, is_tx):
-################################################################################
+
+def log_data(data, is_tx=False):
     print("{} {}".format(
         ">>" if is_tx else "<<",
         ''.join('{:02X} '.format(x) for x in data).rstrip()
     ))
 
-################################################################################
+
 def read_data(size, timeout):
-################################################################################    
     data = bytearray()
     start = time.monotonic()
     while True:
@@ -74,13 +74,8 @@ def read_data(size, timeout):
 
     return data
 
-################################################################################
-def get_pid(pid):
-################################################################################
-    global response
-    
-    result = False
 
+def get_pid(pid):
     # Punch the calculated checksum into the last byte and then send the request
     request_len = len(pid.request)
     pid.request[request_len - 1] = calculate_checksum(pid.request)
@@ -93,7 +88,6 @@ def get_pid(pid):
     uart.write_data(pid.request)
 
     # read the response
-    response = None        
     if CAUTIOUS_READ:
         response = read_data(READ_BUFFER_SIZE, 0.1)
     else:
@@ -101,7 +95,7 @@ def get_pid(pid):
         response = read_data(pid.response_len + request_len, 0.1)
 
     if not connected:
-        log_data(response, False)
+        log_data(response)
 
     # Remove the request from the response
     response = response[request_len:]
@@ -114,37 +108,28 @@ def get_pid(pid):
         if cs1 == cs2:
             # Negative response ?
             if response[1] != 0x7F:
-                result = True
+                return response
 
-    return result
 
-################################################################################
 def calculate_key(seed):
-################################################################################
     count = ((seed >> 0xC & 0x8) + (seed >> 0x5 & 0x4) + (seed >> 0x3 & 0x2) + (seed & 0x1)) + 1
 
     for idx in range(0, count):
-        tap = ((seed >> 1) + (seed >> 2 ) + (seed >> 8 ) + (seed >> 9)) & 1
-        tmp = (seed >> 1) | ( tap << 0xF)
+        tap = ((seed >> 1) + (seed >> 2) + (seed >> 8) + (seed >> 9)) & 1
+        tmp = (seed >> 1) | (tap << 0xF)
         
         if (seed >> 0x3 & 1) and (seed >> 0xD & 1):
             seed = tmp & ~1
         else:
             seed = tmp | 1
 
-    return (seed >> 8, seed & 255)
+    return seed >> 8, seed & 255
 
-################################################################################
+
 def open_uart():
-################################################################################
-    global uart
-
-    # set up the device
-    uart = Ftdi()
     try:
         uart.open(0x403, 0x6001)
     except Exception as e:
-        uart = None
         print("error={}".format(e))
         return
     
@@ -152,9 +137,8 @@ def open_uart():
     uart.set_line_property(8, 1, 'N')
     # print(uart.modem_status())
 
-################################################################################
+
 def slow_init(address):
-################################################################################
 
     # Set K-line HI for 300ms
     # Transmit address byte at 5 baud (0x33)
@@ -165,14 +149,12 @@ def slow_init(address):
     # Wait 25-50ms and send inverted KB2
     # Wait 25-50ms and send inverted address byte
 
-    global uart
-    global response
     global connected
 
     if uart is None:
         return
 
-    uart.set_bitmode(0x01, 0x01)
+    uart.set_bitmode(0x01, bit_mode_bitbang)
         
     # K line HI for 300ms
     uart.write_data(HI)
@@ -193,14 +175,13 @@ def slow_init(address):
     pause(0.200, 0.01)
 
     # Switch off bit bang
-    uart.set_bitmode(0x00, 0x00)
+    uart.set_bitmode(0x00, bit_mode_reset)
     uart.purge_buffers()
 
     # Wait up 300ms + 20ms + 20ms to read Sync + KB1 + KB2 bytes
     response = uart.read_data(3, 0.340)
 
-    response_len = len(response)
-    log_data(response, False)
+    log_data(response)
     if response[0] == 0x55 and response[2] == 0x8F:
         inverted_address    = bytearray([~address])
         inverted_kb2        = bytearray([~response[2]])
@@ -211,25 +192,17 @@ def slow_init(address):
         log_data(inverted_kb2)
 
         # Send inverted address
-        pause (0.025, 0.001)
+        pause(0.025, 0.001)
         uart.write_data(inverted_address)
         log_data(inverted_address)
         
         connected = True
     else:
         uart.close()
-        uart = None
 
-################################################################################
+
 def fast_init():
-################################################################################
-    global uart
-    global KEY_RETURN
-    global response
     global connected
-
-    if uart is None:
-        return
     
     HI = bytearray([0x01])
     LO = bytearray([0x00])
@@ -237,7 +210,7 @@ def fast_init():
     attempt = 0
     while attempt < MAX_ATTEMPTS:
         # Toggle the TX line for the fast_init using the ftdi chip bit bang mode
-        uart.set_bitmode(0x01, 0x01)
+        uart.set_bitmode(0x01, bit_mode_bitbang)
         
         uart.write_data(HI)
         pause(0.500, 0.01)
@@ -249,7 +222,7 @@ def fast_init():
         pause(0.0245, 0.00025)
 
         # Switch off bit bang
-        uart.set_bitmode(0x00, 0x00)
+        uart.set_bitmode(0x00, bit_mode_reset)
         uart.purge_buffers()
 
         # Start communications
@@ -263,8 +236,12 @@ def fast_init():
         # >> 04 27 02 14 89 CA
         # << 04 27 02 14 89 CA 02 67 02 6B
 
-        if (get_pid(INIT_FRAME) and get_pid(START_DIAGNOSTICS) and get_pid(REQUEST_SEED)):
-            seed = response[3] << 8 | response[4]
+        frame_initialized = get_pid(INIT_FRAME)
+        diag_started = get_pid(START_DIAGNOSTICS)
+        response_seed = get_pid(REQUEST_SEED)
+
+        if all([frame_initialized, diag_started, response_seed]):
+            seed = response_seed[3] << 8 | response_seed[4]
             key_hi, key_lo = calculate_key(seed)
             KEY_RETURN.request[3] = key_hi
             KEY_RETURN.request[4] = key_lo
@@ -278,11 +255,9 @@ def fast_init():
     # fast_init failed
     if not connected:
         uart.close()
-        uart = None
 
-################################################################################
+
 def start_logger():
-################################################################################
     if not connected:
         return
 
@@ -290,20 +265,22 @@ def start_logger():
     while True:
         buf = "{:010.3f}".format(time.monotonic() - start)
         
-        if get_pid(BATTERY_VOLTAGE):
-            buf += " " "{:06.2f}".format((response[5] << 8 | response[6]) / 1000.0)
+        battery_voltage = get_pid(BATTERY_VOLTAGE)
+        if battery_voltage:
+            buf += " " "Voltage: {:06.2f}".format((battery_voltage[5] << 8 | battery_voltage[6]) / 1000.0)
 
-        if get_pid(ENGINE_RPM):
-            buf += " " "{:06d}".format(response[3] << 8 | response[4])
+        engine_rpm = get_pid(ENGINE_RPM)
+        if engine_rpm:
+            buf += " " "Engine RPM: {:06d}".format(engine_rpm[3] << 8 | engine_rpm[4])
 
-        if get_pid(VEHICLE_SPEED):
-            buf += " " "{:03d}".format(response[3])
+        vehicule_speed = get_pid(VEHICLE_SPEED)
+        if vehicule_speed:
+            buf += " " "Vehicule speed: {:03d}".format(vehicule_speed[3])
         
         print(buf)
         
-################################################################################
+
 if __name__ == "__main__":
-################################################################################
 
     # TODO: Continuously wait to connect and handle ignition off and on
     # TODO: Start a new data file each time the ignition is switched on
@@ -311,6 +288,7 @@ if __name__ == "__main__":
     # TODO: Can you connect after the engine has started ?
     
     open_uart()
-    fast_init()      
+    fast_init()
+    print('Fast init done !')
     start_logger()
 
